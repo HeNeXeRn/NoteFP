@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>七段数码管交互</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .seven-segment {
+            width: 200px;
+            height: 300px;
+            position: relative;
+            border: 2px solid #333;
+            background-color: #fff;
+            margin-bottom: 20px;
+        }
+        
+        .segment {
+            position: absolute;
+            background-color: #333;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .segment.active {
+            background-color: #ff0000;
+        }
+        
+        /* 上 */
+        .a {
+            top: 10px;
+            left: 40px;
+            width: 120px;
+            height: 15px;
+        }
+        
+        /* 上右 */
+        .b {
+            top: 25px;
+            right: 10px;
+            width: 15px;
+            height: 120px;
+        }
+        
+        /* 下右 */
+        .c {
+            bottom: 25px;
+            right: 10px;
+            width: 15px;
+            height: 120px;
+        }
+        
+        /* 下 */
+        .d {
+            bottom: 10px;
+            left: 40px;
+            width: 120px;
+            height: 15px;
+        }
+        
+        /* 下左 */
+        .e {
+            bottom: 25px;
+            left: 10px;
+            width: 15px;
+            height: 120px;
+        }
+        
+        /* 上左 */
+        .f {
+            top: 25px;
+            left: 10px;
+            width: 15px;
+            height: 120px;
+        }
+        
+        /* 中间 */
+        .g {
+            top: 145px;
+            left: 40px;
+            width: 120px;
+            height: 15px;
+        }
+        
+        /* 小数点 */
+        .dp {
+            bottom: 25px;
+            right: -20px;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+        }
+        
+        .content {
+            margin-top: 20px;
+            font-size: 24px;
+            position: relative;
+        }
+        
+        .binary {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #eee;
+            border-radius: 5px;
+            font-family: monospace;
+            position: relative;
+        }
+        
+        .copy-button {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .copy-button:hover {
+            background-color: #0056b3;
+        }
+        
+        .buttons {
+            margin-top: 20px;
+        }
+        
+        button {
+            padding: 10px 15px;
+            margin: 0 5px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        .tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>七段数码管交互</h2>
+        <div class="seven-segment">
+            <div class="segment a" id="a" data-segment="a"></div>
+            <div class="segment b" id="b" data-segment="b"></div>
+            <div class="segment c" id="c" data-segment="c"></div>
+            <div class="segment d" id="d" data-segment="d"></div>
+            <div class="segment e" id="e" data-segment="e"></div>
+            <div class="segment f" id="f" data-segment="f"></div>
+            <div class="segment g" id="g" data-segment="g"></div>
+            <div class="segment dp" id="dp" data-segment="dp"></div>
+        </div>
+        
+        <div class="content">
+            <div class="binary" id="binary">abcdefgh: 00000000
+                <button class="copy-button" id="copy-button">复制</button>
+                <span class="tooltip" id="copy-tooltip">已复制到剪贴板</span>
+            </div>
+        </div>
+        
+        <div class="buttons">
+            <button id="reset">重置</button>
+            <button id="toggle-all">全部切换</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const segments = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'dp'];
+            const segmentElements = {};
+            const binaryDisplay = document.getElementById('binary');
+            const resetButton = document.getElementById('reset');
+            const toggleAllButton = document.getElementById('toggle-all');
+            const copyButton = document.getElementById('copy-button');
+            const copyTooltip = document.getElementById('copy-tooltip');
+            
+            // 初始化段元素
+            segments.forEach(segment => {
+                segmentElements[segment] = document.getElementById(segment);
+                segmentElements[segment].addEventListener('click', () => toggleSegment(segment));
+            });
+            
+            // 切换段状态
+            function toggleSegment(segment) {
+                segmentElements[segment].classList.toggle('active');
+                updateBinaryDisplay();
+            }
+            
+            // 更新二进制显示
+            function updateBinaryDisplay() {
+                let binaryString = 'abcdefgh: ';
+                segments.forEach(segment => {
+                    binaryString += segmentElements[segment].classList.contains('active') ? '1' : '0';
+                });
+                binaryDisplay.textContent = binaryString;
+            }
+            
+            // 重置所有段
+            resetButton.addEventListener('click', () => {
+                segments.forEach(segment => {
+                    segmentElements[segment].classList.remove('active');
+                });
+                updateBinaryDisplay();
+            });
+            
+            // 切换所有段
+            toggleAllButton.addEventListener('click', () => {
+                segments.forEach(segment => {
+                    toggleSegment(segment);
+                });
+                updateBinaryDisplay();
+            });
+            
+            // 复制二进制代码
+            copyButton.addEventListener('click', () => {
+                const binaryText = binaryDisplay.textContent.replace('abcdefgh: ', '');
+                const tempInput = document.createElement('textarea');
+                tempInput.value = binaryText;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+                
+                // 显示复制提示
+                copyTooltip.style.opacity = '1';
+                setTimeout(() => {
+                    copyTooltip.style.opacity = '0';
+                }, 2000);
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,179 @@
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Tuple, Set
+import heapq
+
+# 读取城市山景数量数据
+mountain_counts = pd.read_excel('mountain_counts.xlsx')
+
+# 读取城市间最短通行时间数据
+travel_times = pd.read_excel('城市间最短通行时间(含换乘).xlsx')
+
+# 转换时间为小时（假设时间格式为"HH:MM"）
+def time_to_hours(time_str: str) -> float:
+    if pd.notna(time_str):
+        parts = time_str.split(':')
+        return int(parts[0]) + int(parts[1])/60
+    return 0
+
+travel_times['最短时间（小时）'] = travel_times['最短时间'].apply(time_to_hours)
+
+# 构建城市图结构
+class CityGraph:
+    def __init__(self):
+        self.adjacency_list = {}  # 邻接表
+        self.mountains = {}       # 城市山景数量
+        self.airports = set()     # 有机场的城市
+    
+    def add_edge(self, start_city: str, end_city: str, time: float):
+        if start_city not in self.adjacency_list:
+            self.adjacency_list[start_city] = []
+        self.adjacency_list[start_city].append((end_city, time))
+    
+    def add_mountain_count(self, city: str, count: int):
+        self.mountains[city] = count
+    
+    def add_airport(self, city: str):
+        self.airports.add(city)
+    
+    def get_neighbors(self, city: str) -> List[Tuple[str, float]]:
+        return self.adjacency_list.get(city, [])
+    
+    def get_mountain_count(self, city: str) -> int:
+        return self.mountains.get(city, 0)
+    
+    def has_airport(self, city: str) -> bool:
+        return city in self.airports
+
+# 创建城市图
+graph = CityGraph()
+
+# 添加山景数量
+for _, row in mountain_counts.iterrows():
+    graph.add_mountain_count(row['城市'], row['山类景点数量'])
+
+# 添加城市间连接
+for _, row in travel_times.iterrows():
+    graph.add_edge(row['出发城市'], row['到达城市'], row['最短时间（小时）'])
+
+# 假设部分山景多的城市有机场（实际情况需要根据真实数据调整）
+airport_cities = mountain_counts.sort_values(by='山类景点数量', ascending=False).head(10)['城市'].tolist()
+for city in airport_cities:
+    graph.add_airport(city)
+
+# 定义游览时间（小时）
+VIEWING_TIME_PER_MOUNTAIN = 0.5  # 每个山景需要0.5小时游览
+ADDITIONAL_TIME_PER_CITY = 1     # 每个城市额外需要1小时休息和用餐
+
+# 定义总时间限制（小时）
+TOTAL_TIME_LIMIT = 144
+
+# A*算法寻找最优路径
+def find_optimal_route(start_city: str, graph: CityGraph, time_limit: float) -> Tuple[List[str], float, int]:
+    # A*算法的启发式函数：剩余可游览景点的估计数
+    def heuristic(city: str) -> int:
+        # 简单估计：当前城市未游览的景点数加上可能的其他城市景点数
+        return graph.get_mountain_count(city)
+    
+    # 优先队列：总时间, 启发式值, 当前城市, 当前路径, 已游览景点数
+    heap = []
+    
+    # 初始游览时间（包括景点游览和额外时间）
+    initial_mountain_count = graph.get_mountain_count(start_city)
+    initial_viewing_time = initial_mountain_count * VIEWING_TIME_PER_MOUNTAIN + ADDITIONAL_TIME_PER_CITY
+    
+    heapq.heappush(heap, (initial_viewing_time, heuristic(start_city), [start_city], initial_mountain_count))
+    
+    # 记录每个城市的最佳游览信息：最小时间，最大景点数，最佳路径
+    best_times = {}
+    best_mountain_counts = {}
+    best_paths = {}
+    
+    while heap:
+        current_time, h, path, mountain_count = heapq.heappop(heap)
+        
+        current_city = path[-1]
+        
+        # 如果当前城市已经访问过，且已有记录显示在更短时间内游览了更多景点，则跳过
+        if current_city in best_times:
+            if (current_time >= best_times[current_city] and 
+                mountain_count <= best_mountain_counts[current_city]):
+                continue
+        
+        # 更新最佳记录
+        if (current_city not in best_times or 
+            mountain_count > best_mountain_counts[current_city] or 
+            (mountain_count == best_mountain_counts[current_city] and 
+             current_time < best_times[current_city])):
+            best_times[current_city] = current_time
+            best_mountain_counts[current_city] = mountain_count
+            best_paths[current_city] = path.copy()
+        
+        # 如果时间用完，返回当前路径
+        if current_time >= time_limit:
+            continue
+        
+        # 尝试访问邻居城市
+        visited_cities = set(path)
+        for neighbor, travel_time in graph.get_neighbors(current_city):
+            if neighbor in visited_cities:
+                continue  # 不重复访问城市
+            
+            # 计算新的时间和景点数
+            neighbor_mountain_count = graph.get_mountain_count(neighbor)
+            viewing_time = neighbor_mountain_count * VIEWING_TIME_PER_MOUNTAIN + ADDITIONAL_TIME_PER_CITY
+            new_time = current_time + travel_time + viewing_time
+            
+            # 如果总时间超过限制，跳过
+            if new_time > time_limit:
+                continue
+            
+            new_path = path + [neighbor]
+            new_mountain_count = mountain_count + neighbor_mountain_count
+            
+            # 计算启发式函数值
+            h = heuristic(neighbor)
+            
+            # 推入优先队列
+            heapq.heappush(heap, (new_time, h, new_path, new_mountain_count))
+    
+    # 在所有可能的路径中找到游览景点数最多的，并且时间不超过限制
+    max_mountain_count = 0
+    best_path = []
+    best_time = 0
+    
+    for city in best_times:
+        if best_mountain_counts[city] > max_mountain_count:
+            max_mountain_count = best_mountain_counts[city]
+            best_time = best_times[city]
+            best_path = best_paths[city]
+        elif best_mountain_counts[city] == max_mountain_count:
+            if best_times[city] < best_time:
+                best_time = best_times[city]
+                best_path = best_paths[city]
+    
+    return best_path, best_time, max_mountain_count
+
+# 从有机场且山景多的城市开始
+airport_cities = [city for city in graph.mountains if graph.has_airport(city)]
+airport_cities_sorted = sorted(airport_cities, key=lambda x: graph.get_mountain_count(x), reverse=True)
+
+best_overall_route = []
+best_overall_mountain_count = 0
+best_overall_time = 0
+
+# 为每个候选起始城市计算最优路线
+for city in airport_cities_sorted:
+    route, total_time, mountain_count = find_optimal_route(city, graph, TOTAL_TIME_LIMIT)
+    
+    if mountain_count > best_overall_mountain_count:
+        best_overall_mountain_count = mountain_count
+        best_overall_time = total_time
+        best_overall_route = route
+
+# 输出结果
+print("最佳旅游路线:")
+for city in best_overall_route:
+    print(f"{city} (山景数量: {graph.get_mountain_count(city)})")
+print(f"总游览景点数量: {best_overall_mountain_count}")
+print(f"总花费时间: {best_overall_time:.2f} 小时")
